@@ -1,6 +1,6 @@
 import os.path as osp
-from src import SAMP_models as models
-from src import sched_sampl_utils
+import SAMP_models as models
+import sched_sampl_utils
 import torch
 import numpy as np
 

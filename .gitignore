@@ -137,3 +137,12 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# vscode
+.vscode
+
+# .DS_Store
+.DS_Store
+
+# cfg file
+GoalNet.yaml
+MotionNet.yaml

@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from src import misc_utils
+import misc_utils
 
 
 def normalize_vector(v):

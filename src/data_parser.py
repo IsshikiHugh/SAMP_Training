@@ -2,7 +2,7 @@ import os.path as osp
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from src import misc_utils
+import misc_utils
 
 
 def load_norm_data(data_dir):
@@ -53,6 +53,9 @@ class GoalNetData(Dataset):
 
 
 class MotionNetData(Dataset):
+    # Map-style dataset: 
+    # https://pytorch.org/docs/stable/data.html#map-style-datasets
+    
     def __init__(self, dtype=None, data_dir="", state_dim=None, normalize=True, L=8, train_data=True, **kwargs):
         self.dtype = dtype if dtype is not None else torch.float32
         self.state_dim = state_dim
@@ -60,11 +63,15 @@ class MotionNetData(Dataset):
             folder_name = 'train'
         else:
             folder_name = 'test'
+            
+        # Using loadtxt(), we can only get 1-dim or 2-dim vector.
         self.input_data = np.loadtxt(osp.join(data_dir, folder_name, 'Input.txt')).astype(np.float32)
         self.output_data = np.loadtxt(osp.join(data_dir, folder_name, 'Output.txt')).astype(np.float32)
         self.sequences = np.loadtxt(osp.join(data_dir, folder_name, 'Sequences.txt')).astype(np.float32)
         self.input_mean, self.input_std, self.output_mean, self.output_std = load_norm_data(data_dir)
 
+        # Normalize the input data and output data using:
+        # x = (x - mean) / std
         if normalize:
             self.input_data = misc_utils.Normalize(self.input_data, self.input_mean, self.input_std)
             self.output_data = misc_utils.Normalize(self.output_data, self.output_mean, self.output_std)
@@ -95,7 +102,7 @@ class MotionNetData(Dataset):
     def __len__(self):
         return len(self.input_data)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx): 
         y = self.output_data[idx]
         x1 = self.input_data[idx][:, :self.state_dim]
         x2 = self.input_data[idx][:, self.state_dim:]

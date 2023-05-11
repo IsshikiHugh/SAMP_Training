@@ -1,6 +1,6 @@
 model_name: "GoalNet"
-data_dir: '~/SAMP_workspace/data/GoalNet'
-output_dir: '~/SAMP_workspace/exp/GoalNet'
+data_dir: '.../GoalNet'
+output_dir: '.../GoalNet'
 
 batch_size: 32
 input_dim_goalnet: 6
