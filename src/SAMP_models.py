@@ -57,6 +57,9 @@ class PredictionNet(torch.nn.Module):
         self.use_cuda = use_cuda
 
         # Motion network expert parameters
+        # w ~ weight
+        # b ~ bias
+        # Three fully connected layers reminded @ paper words below formula (2).
         self.w_l1, self.b_l1 = self.init_params(
             self.num_experts, self.input_size, self.hidden_size)
         self.w_l2, self.b_l2 = self.init_params(
@@ -90,6 +93,9 @@ class PredictionNet(torch.nn.Module):
     def forward(self, p_prev, blending_coef, z=None):
         # inputs: B*input_dim
         # Blending_coef : B*experts
+
+        # w_l = blending_coef * self.w_l
+        # b_l = blending_coef @ self.b_l
 
         w_l1 = torch.sum(
             blending_coef[..., None, None] * self.w_l1[None], dim=1)
@@ -134,6 +140,7 @@ class INet(nn.Module):
 class MotionNet_Encoder(nn.Module):
     def __init__(self, state_dim=5307, z_dim=32, **kwargs):
         super(MotionNet_Encoder, self).__init__()
+        # State Encoder
         self.main = nn.Sequential(
             nn.Linear(2 * state_dim, 512),
             nn.ELU(),
@@ -143,7 +150,9 @@ class MotionNet_Encoder(nn.Module):
             nn.ELU()
         )
 
+        # Interaction Encoder
         self.INet = INet()
+        # FC layers for mu and logvar
         self.fc_mu = nn.Linear(256 * 2, z_dim)
         self.fc_logvar = nn.Linear(256 * 2, z_dim)
 
@@ -159,11 +168,14 @@ class MotionNet_Decoder(nn.Module):
     def __init__(self, state_dim=524, I_enc_dim=256, z_dim=32, h_dim=256, rng=None, num_experts=5, h_dim_gate=256,
                  **kwargs):
         super(MotionNet_Decoder, self).__init__()
+        # Interaction Encoder
         self.INet = INet()
+        
         pred_net_input_dim = state_dim + I_enc_dim + z_dim
-
+        # Gating Network
         self.gating_network = GatingNetwork(rng=rng, input_size=state_dim + z_dim, output_size=num_experts,
                                             hidden_size=h_dim_gate, **kwargs)
+        # Prediction Network (Blending is inside it)
         self.prediction_net = PredictionNet(rng=rng, num_experts=num_experts,
                                             input_size=pred_net_input_dim, hidden_size=h_dim,
                                             output_size=state_dim, z_dim=z_dim, **kwargs)
@@ -183,13 +195,26 @@ class MotionNet(nn.Module):
         self.decoder = MotionNet_Decoder(state_dim=state_dim, I_enc_dim=256, **kwargs)
 
     def reparameterize(self, mu, logvar):
+        # std = sigma = sqrt(Var) = sqrt(exp(logvar)) = exp(0.5 * logvar)
         std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
+        # sample from normal distribution
+        eps = torch.randn_like(std)    
+        '''
+        (ret - mu) / std ~ N(0, 1)
+        While eps is sampled from N(0, 1).
+        Thus ret ~ N(mu, std)
+                 = mu + eps * std.
+        '''
         return mu + eps * std
 
     def forward(self, p, p_prev, I=None):
+        # Ref: figure 3 @ paper
+        
+        # Encoder
         mu, logvar = self.encoder(p_prev, p, I)
+        # Sample
         z = self.reparameterize(mu, logvar)
+        # Decoder
         return self.decoder(z, p_prev, I), mu, logvar
 
 
@@ -202,6 +227,7 @@ class GoalNetEncoder(nn.Module):
     def __init__(self, input_dim, cond_dim, h_dim, z_dim, **kwargs):
         super(GoalNetEncoder, self).__init__()
 
+        # Interaction Encoder.
         self.cond_encoder = nn.Sequential(
             nn.Linear(cond_dim, h_dim),
             nn.ReLU(),
@@ -229,6 +255,8 @@ class GoalNetEncoder(nn.Module):
 class GoalNetDecoder(nn.Module):
     def __init__(self, input_dim, cond_dim, h_dim, z_dim, **kwargs):
         super(GoalNetDecoder, self).__init__()
+        
+        # Interaction Encoder.
         self.cond_encoder = nn.Sequential(
             nn.Linear(cond_dim, h_dim),
             nn.ReLU(),
@@ -258,11 +286,15 @@ class GoalNet(nn.Module):
         self.decoder = GoalNetDecoder(input_dim_goalnet, interaction_dim, h_dim_goalnet, z_dim_goalnet)
 
     def reparameterize(self, mu, logvar):
+        # Sample from normal distribution with given arg.
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
 
     def forward(self, x, cond):
+        # Encoder.
         mu, logvar = self.encoder(x, cond)
+        # Sample.
         z = self.reparameterize(mu, logvar)
+        # Decoder.
         return self.decoder(z, cond), mu, logvar

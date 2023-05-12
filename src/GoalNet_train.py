@@ -18,6 +18,7 @@ def get_lr(optimizer):
 
 
 def train():
+    # Set model to training mode.
     model.train()
 
     total_loss = 0
@@ -25,19 +26,29 @@ def train():
     total_kld_loss = 0
 
     for batch_idx, data in enumerate(train_data_loader):
+        # Init.
         optimizer.zero_grad()
+        # Load data.
         cond = data['x'].to(device)
         y = data['y'].to(device)
 
+        # Forward pass.
         y_hat, mu, logvar = model(y, cond)
 
+        # Compute loss.
+        # KLD: https://hsinjhao.github.io/2019/05/22/KL-DivergenceIntroduction/
+        # Related knowledge: Entropy formula of normal distribution
         recon_loss = F.mse_loss(y_hat, y, reduction='mean')
         kld = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+        # Formula (4) @ paper.
         loss = recon_loss + args.kl_w * kld
 
+        # Backward pass.
         loss.backward()
+        # Update parameters.
         optimizer.step()
 
+        # Accumulate loss.
         total_recon_loss += recon_loss.item()
         total_kld_loss += kld.item()
         total_loss += loss.item()
@@ -52,6 +63,7 @@ def train():
 
 
 def test():
+    # Set model to evaluation mode.
     model.eval()
 
     total_loss = 0
@@ -84,6 +96,7 @@ def test():
 if __name__ == '__main__':
     from threadpoolctl import threadpool_limits
 
+    # Read in config.
     with threadpool_limits(limits=1, user_api='blas'):
         args, args_dict = parse_config()
 
@@ -101,18 +114,20 @@ if __name__ == '__main__':
             del (conf_data[key])
         yaml.dump(conf_data, conf_file)
 
+    # Random number generator.
     rng = np.random.RandomState(23456)
     args_dict['rng'] = rng
-
+    # Move to GPU if available.
     device = torch.device("cuda" if args.use_cuda else "cpu")
     dtype = torch.float32
-
+    # Load model and its parameters.
     model = models.load_model(**args_dict).to(device)
     n_params = models.count_parameters(model)
     print('Num of trainable param = {:.2f}M, exactly = {}'.format(n_params / (10 ** 6), n_params))
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     epoch = 1
+    # Load checkpoint if specified.
     if args.load_checkpoint > 0:
         print('loading stats of epoch {}'.format(args.load_checkpoint))
         checkpoint = torch.load(
@@ -126,6 +141,7 @@ if __name__ == '__main__':
     os.makedirs(log_dir, exist_ok=True)
     writer = SummaryWriter(log_dir)
 
+    # Get train data.
     train_data_set = GoalNetData(device=torch.device("cpu"), train_data=True, **args_dict)
     train_data_loader = DataLoader(train_data_set, batch_size=args_dict.get('batch_size'),
                                    num_workers=args_dict.get('num_workers'), shuffle=args.shuffle,
@@ -133,6 +149,7 @@ if __name__ == '__main__':
     train_set_size = len(train_data_set)
     n_batches_train = train_set_size // args.batch_size
     print('No of training example: {}, No of batches {}'.format(train_set_size, n_batches_train))
+    # If test is specified, get test data.
     if args.test:
         test_data_set = GoalNetData(device=torch.device("cpu"), train_data=False, **args_dict)
         test_data_loader = DataLoader(test_data_set, batch_size=args_dict.get('batch_size'),
@@ -142,16 +159,19 @@ if __name__ == '__main__':
         n_batches_test = test_set_size // args.batch_size
         print('Number of testing example: {}'.format(test_set_size))
 
+    # Train and (test).
     for epoch in range(epoch, args.epochs + 1):
         print('Training epoch {}'.format(epoch))
 
         start = time.time()
+        # Main training line.
         total_train_loss = train()
         training_time = time.time() - start
 
         if args.test:
             print('Testing epoch {}'.format(epoch))
             start = time.time()
+            # Main testing line.
             total_test_loss = test()
             testing_time = time.time() - start
 
@@ -159,10 +179,11 @@ if __name__ == '__main__':
 
         print('training_time = {:.4f}'.format(training_time))
         writer.add_scalar('time/training_time', training_time, epoch)
+        # Test if specified.
         if args.test:
             print('test_time = {:.4f}'.format(testing_time))
             writer.add_scalar('time/testing_time', testing_time, epoch)
-
+        # Save data.
         if args.save_checkpoints and epoch % args.log_interval == 0:
             data = {
                 'epoch': epoch,

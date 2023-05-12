@@ -45,7 +45,8 @@ def train():
             if i != 0 and Bernoulli.sample().int() == 1:
                 p_prev = p_hat
                 # Always pass gt goal features
-                # TODO: Figure out what the args here means!
+                # 13 here might be the t mentioned @ paper.
+                # TODO: but where is c_i?
                 p_prev[:, :] = torch.cat((p_prev[:, :-13 * (6 + args.num_actions)],
                                           x1[:, i, -13 * (6 + args.num_actions):]),
                                          dim=-1)
@@ -54,12 +55,14 @@ def train():
             # Forward pass.
             p_hat, mu, logvar = model(p, p_prev, I)
             
-            # Calculate loss.
+            # Compute loss.
             recon_loss = F.mse_loss(p_hat, p, reduction='sum') / float(args.batch_size)
-            # TODO: Figure out the formula from paper.
+            # KLD: https://hsinjhao.github.io/2019/05/22/KL-DivergenceIntroduction/
+            # Related knowledge: Entropy formula of normal distribution
             kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / float(args.batch_size)
-            # Weighted averaging.
+            # Formula (3) @ paper.
             loss = recon_loss + args.kl_w * kld
+            
             # Accumulate loss.
             total_recon_loss += recon_loss.item()
             total_kld_loss += kld.item()
@@ -72,6 +75,7 @@ def train():
 
             # Extract p_hat from the graph.
             p_hat = p_hat.detach()
+            # Do scheduled sampling.
             if args.scheduled_sampling and P < 1:
                 # TODO: Figure out what's this?
                 p_hat = misc_utils.transform_output(p_prev, I, p_hat, input_mean, input_std, output_mean, output_std,
